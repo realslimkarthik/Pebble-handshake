@@ -1,16 +1,25 @@
 #include <pebble.h>
 
 #define KEY_DATA 5
+#define KEY_TIME 6
 
 static Window* window;
 static TextLayer* text_layer;
 static int sensitivity;
 
-static void send(int key, int data) {
+static void send(int keyData, int keyTime, int data, time_t timestamp) {
+    Tuplet pairs[] = {
+      TupletInteger(keyData, (uint8_t) data),
+      TupletInteger(keyTime, timestamp),
+    };
+    uint8_t buffer[256];
+    uint32_t size;
     DictionaryIterator *iter;
+
     app_message_outbox_begin(&iter);
-    DictionaryResult write_res = dict_write_int(iter, key, &data, sizeof(int), true);
+    dict_serialize_tuplets_to_buffer(pairs, 2, buffer, &size);
     /*
+    DictionaryResult write_res = dict_write_int(iter, key, &data, sizeof(int), true);
     char tempStr[64];
     snprintf(tempStr, sizeof(int), "%d", write_res);
     APP_LOG(APP_LOG_LEVEL_ERROR, tempStr);
@@ -23,10 +32,11 @@ static void accel_data_handler(AccelData* data, uint32_t num_samples) {
     static char buf[128];
     int dy = data[num_samples-1].y - data[0].y;
     if (dy > sensitivity) {
+      time_t timestamp = time(NULL);
       snprintf(buf, sizeof(buf), "Threshold: %d\nHandshake!", sensitivity);
       text_layer_set_text(text_layer, buf);
       vibes_double_pulse();
-      send(KEY_DATA, 1);
+      send(KEY_DATA, KEY_TIME, 1, timestamp);
     } else {
       snprintf(buf, sizeof(buf), "Threshold: %d", sensitivity);
       text_layer_set_text(text_layer, buf);
