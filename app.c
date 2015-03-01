@@ -6,25 +6,34 @@
 static Window* window;
 static TextLayer* text_layer;
 static int sensitivity;
+static uint8_t buffer[256];
 
-static void send(int keyData, int keyTime, int data, time_t timestamp) {
+static void sendData(int keyData, int keyTime, int data, time_t timestamp) {
     Tuplet pairs[] = {
       TupletInteger(keyData, (uint8_t) data),
-      TupletInteger(keyTime, timestamp),
+      TupletInteger(keyTime, (uint8_t)timestamp),
     };
-    uint8_t buffer[256];
-    uint32_t size;
+    APP_LOG(APP_LOG_LEVEL_INFO, "%d", (uint8_t)data);
+    APP_LOG(APP_LOG_LEVEL_INFO, "%d", (uint16_t)timestamp);
+    
+    uint32_t size = sizeof(pairs);
     DictionaryIterator *iter;
 
-    app_message_outbox_begin(&iter);
-    dict_serialize_tuplets_to_buffer(pairs, 2, buffer, &size);
-    /*
-    DictionaryResult write_res = dict_write_int(iter, key, &data, sizeof(int), true);
-    char tempStr[64];
-    snprintf(tempStr, sizeof(int), "%d", write_res);
-    APP_LOG(APP_LOG_LEVEL_ERROR, tempStr);
-    */
-    app_message_outbox_send();
+    if(app_message_outbox_begin(&iter) != APP_MSG_OK) {
+      APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox begin failed");
+      return;
+    }
+    DictionaryResult serialize_res = dict_serialize_tuplets_to_buffer_with_iter(iter, pairs, 2, buffer, &size);
+  
+    if(serialize_res != DICT_OK) {
+      APP_LOG(APP_LOG_LEVEL_ERROR, "Dictionary serialize failed");
+      APP_LOG(APP_LOG_LEVEL_ERROR, "%d", (int)serialize_res);
+      return;
+    } else if(serialize_res == DICT_OK) {
+      APP_LOG(APP_LOG_LEVEL_INFO, "Dictionary serialized");
+      APP_LOG(APP_LOG_LEVEL_INFO, "%d", (int)serialize_res);
+      app_message_outbox_send();
+    }
 }
 
 static void accel_data_handler(AccelData* data, uint32_t num_samples) {
@@ -32,11 +41,12 @@ static void accel_data_handler(AccelData* data, uint32_t num_samples) {
     static char buf[128];
     int dy = data[num_samples-1].y - data[0].y;
     if (dy > sensitivity) {
+      APP_LOG(APP_LOG_LEVEL_INFO, "Detected!");
       time_t timestamp = time(NULL);
       snprintf(buf, sizeof(buf), "Threshold: %d\nHandshake!", sensitivity);
       text_layer_set_text(text_layer, buf);
+      sendData(KEY_DATA, KEY_TIME, 1, timestamp);
       vibes_double_pulse();
-      send(KEY_DATA, KEY_TIME, 1, timestamp);
     } else {
       snprintf(buf, sizeof(buf), "Threshold: %d", sensitivity);
       text_layer_set_text(text_layer, buf);
@@ -77,6 +87,7 @@ static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResul
  
 static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
     APP_LOG(APP_LOG_LEVEL_INFO, "Outbox send success!");
+    //APP_LOG(APP_LOG_LEVEL_INFO, "%d", dict_find(iterator, KEY_TIME));
 }
 
 static void window_load(Window *window) {
